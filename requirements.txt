@@ -1,0 +1,16 @@
+# AI Mock Interview - Dependencies
+# Python 3.8+
+
+# Web
+streamlit>=1.32.0
+
+# Resume parse
+PyPDF2>=3.0.0
+python-docx>=1.0.0
+
+# LLM
+openai>=1.0.0
+
+# Env
+python-dotenv>=1.0.0
+

@@ -1,0 +1,12 @@
+# 部署时 Streamlit 会读取；本地开发同样生效。
+# 公网部署请配合启动参数：--server.address=0.0.0.0 --server.port=$PORT
+
+[server]
+headless = true
+# 简历/作品集上传上限（MB）
+maxUploadSize = 50
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false

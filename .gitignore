@@ -1,0 +1,22 @@
+# 环境变量与密钥（切勿提交）
+.env
+.env.local
+*.pem
+
+# Streamlit 本地 secrets（云端在控制台配置，不提交真实文件）
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+ENV/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
