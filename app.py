@@ -8,32 +8,84 @@ import hashlib
 
 import streamlit as st
 
-from evaluation import evaluate_interview
-from interview_engine import (
-    add_record,
-    advance_after_follow_up,
-    build_interview_state,
-    get_current_question,
-    get_follow_up,
-    interview_records_for_eval,
-)
-from jd_analyzer import analyze_match, generate_questions
-from portfolio_parser import parse_portfolio
-from resume_parser import parse_resume
-from session_logger import (
-    attach_final_report,
-    log_to_json,
-    log_to_markdown,
-    new_interview_log,
-    sync_qa_log_from_state,
-)
-from speech_service import (
-    is_speech_available,
-    text_to_speech,
-    transcribe_with_retry,
-)
 import config_env as _config_env
 from utils import score_dimension_label_zh, truncate_text
+
+try:
+    from evaluation import evaluate_interview
+except Exception as _e:
+    def evaluate_interview(*args, **kwargs):
+        raise RuntimeError(f"evaluation 模块加载失败: {_e}")
+
+try:
+    from interview_engine import (
+        add_record,
+        advance_after_follow_up,
+        build_interview_state,
+        get_current_question,
+        get_follow_up,
+        interview_records_for_eval,
+    )
+except Exception as _e:
+    def _engine_err(*args, **kwargs):
+        raise RuntimeError(f"interview_engine 模块加载失败: {_e}")
+    add_record = _engine_err
+    advance_after_follow_up = _engine_err
+    build_interview_state = _engine_err
+    get_current_question = _engine_err
+    get_follow_up = _engine_err
+    interview_records_for_eval = _engine_err
+
+try:
+    from jd_analyzer import analyze_match, generate_questions
+except Exception as _e:
+    def _jd_err(*args, **kwargs):
+        raise RuntimeError(f"jd_analyzer 模块加载失败: {_e}")
+    analyze_match = _jd_err
+    generate_questions = _jd_err
+
+try:
+    from portfolio_parser import parse_portfolio
+except Exception as _e:
+    def parse_portfolio(*args, **kwargs):
+        return {"error": f"portfolio_parser 模块加载失败: {_e}"}
+
+try:
+    from resume_parser import parse_resume
+except Exception as _e:
+    def parse_resume(*args, **kwargs):
+        return {"error": f"resume_parser 模块加载失败: {_e}"}
+
+try:
+    from session_logger import (
+        attach_final_report,
+        log_to_json,
+        log_to_markdown,
+        new_interview_log,
+        sync_qa_log_from_state,
+    )
+except Exception as _e:
+    def _log_err(*args, **kwargs):
+        raise RuntimeError(f"session_logger 模块加载失败: {_e}")
+    attach_final_report = _log_err
+    log_to_json = _log_err
+    log_to_markdown = _log_err
+    new_interview_log = _log_err
+    sync_qa_log_from_state = _log_err
+
+try:
+    from speech_service import (
+        is_speech_available,
+        text_to_speech,
+        transcribe_with_retry,
+    )
+except Exception as _e:
+    def is_speech_available():
+        return False
+    def text_to_speech(*args, **kwargs):
+        return None
+    def transcribe_with_retry(*args, **kwargs):
+        return None, f"speech_service 模块加载失败: {_e}"
 
 # 兼容兜底：若云端代码版本滞后，缺少新函数时不至于在 import 阶段崩溃
 get_runtime_diag = getattr(_config_env, "get_runtime_diag", lambda: {})
@@ -352,7 +404,10 @@ def render_upload_section():
             if st.session_state.get("_portfolio_sig") != sigp:
                 pdata = parse_portfolio(file_bytes=up_p.read(), filename=up_p.name)
                 if pdata.get("error"):
-                    st.error(pdata["error"])
+                    st.error(f"作品集解析失败：{pdata['error']}")
+                    st.session_state.portfolio_data = None
+                elif not (pdata.get("raw_text") or "").strip():
+                    st.warning("作品集已上传，但未提取到可用文本（可能是扫描版 PDF / 空白文档 / 加密文档）。将按“未上传作品集”继续分析。")
                     st.session_state.portfolio_data = None
                 else:
                     st.session_state.portfolio_data = pdata

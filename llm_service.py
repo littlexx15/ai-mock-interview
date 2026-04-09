@@ -10,7 +10,27 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from config_env import getenv_smart, getenv_smart_optional
-from utils import safe_json_parse
+try:
+    from utils import safe_json_parse
+except Exception:
+    import json
+    import re
+
+    def safe_json_parse(text: str):
+        text = (text or "").strip()
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+        for pattern in [r"\{[\s\S]*\}", r"\[[\s\S]*\]"]:
+            m = re.search(pattern, text)
+            if not m:
+                continue
+            try:
+                return json.loads(m.group())
+            except Exception:
+                continue
+        return None
 
 load_dotenv()
 

@@ -73,6 +73,10 @@ def parse_resume(file_path: Optional[str] = None, file_bytes: Optional[bytes] = 
         result["error"] = f"解析失败: {str(e)}"
         return result
 
+    if not (raw_text or "").strip():
+        result["error"] = "未能从文件中提取到文本内容（可能是扫描版/图片型 PDF、加密文档或空文件）"
+        return result
+
     result["raw_text"] = raw_text
     result["keywords"] = extract_keywords(raw_text)
     result["summary"] = _make_summary(raw_text)
