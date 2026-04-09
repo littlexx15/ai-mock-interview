@@ -32,8 +32,12 @@ from speech_service import (
     text_to_speech,
     transcribe_with_retry,
 )
-from config_env import get_runtime_diag, is_text_llm_ready
+import config_env as _config_env
 from utils import score_dimension_label_zh, truncate_text
+
+# 兼容兜底：若云端代码版本滞后，缺少新函数时不至于在 import 阶段崩溃
+get_runtime_diag = getattr(_config_env, "get_runtime_diag", lambda: {})
+is_text_llm_ready = getattr(_config_env, "is_text_llm_ready", lambda: False)
 
 
 def _build_candidate_background_snippet(
