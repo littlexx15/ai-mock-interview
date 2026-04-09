@@ -4,12 +4,16 @@ AI 模拟面试器 - 语音服务模块
 实现：语音输入（STT）与语音播报（TTS）
 """
 
-import io
+import base64
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
 from config_env import get_speech_config, get_text_llm_config, is_speech_ready
+
+
+def _log_exception(prefix: str, e: Exception) -> None:
+    print(f"{prefix}: type={type(e).__name__} str={str(e)} repr={repr(e)}")
 
 
 def _build_client(api_base: str) -> Optional[OpenAI]:
@@ -109,64 +113,65 @@ def speech_to_text_verbose(
 
     cfg = get_speech_config()
     stt_model = (cfg.get("stt_model") or "").strip()
+    stt_api_base = (cfg.get("stt_api_base") or "").strip()
     if not stt_model:
         return None, []
 
-    filename, mime = _guess_filename_and_mime(audio_format)
-    bio = io.BytesIO(audio_data)
-    bio.name = filename  # type: ignore[attr-defined]
+    _filename, mime = _guess_filename_and_mime(audio_format)
+    print(
+        "[stt] request model=%s base_url=%s audio_bytes=%s mime_type=%s"
+        % (stt_model, stt_api_base, len(audio_data or b""), mime)
+    )
 
-    # --- 1) 尝试 verbose_json（分段） ---
     try:
-        resp = client.audio.transcriptions.create(
+        b64 = base64.b64encode(audio_data or b"").decode("ascii")
+        data_url = f"data:{mime};base64,{b64}"
+
+        completion = client.chat.completions.create(
             model=stt_model,
-            file=(filename, bio, mime),
-            response_format="verbose_json",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": data_url,
+                            },
+                        }
+                    ],
+                }
+            ],
+            extra_body={
+                "asr_options": {
+                    "enable_itn": False,
+                }
+            },
         )
-        data = _transcription_to_dict(resp)
-        text = (data.get("text") or "").strip() or None
-        raw_segs = data.get("segments") or []
-        segments: List[Dict[str, Any]] = []
-        for s in raw_segs:
-            if isinstance(s, dict):
-                t = (s.get("text") or "").strip()
-                segments.append(
-                    {
-                        "text": t,
-                        "start": float(s.get("start", 0) or 0),
-                        "end": float(s.get("end", 0) or 0),
-                    }
-                )
-            else:
-                t = (getattr(s, "text", "") or "").strip()
-                segments.append(
-                    {
-                        "text": t,
-                        "start": float(getattr(s, "start", 0) or 0),
-                        "end": float(getattr(s, "end", 0) or 0),
-                    }
-                )
-        segments = [x for x in segments if x.get("text")]
-        if text:
-            return text, segments
+        print("[stt] raw completion object:", completion)
+        print("[stt] repr(completion):", repr(completion))
+
+        msg = completion.choices[0].message if completion and completion.choices else None
+        content = getattr(msg, "content", None) if msg else None
+        if isinstance(content, str):
+            text = content.strip()
+            return (text or None), []
+        if isinstance(content, list):
+            texts: List[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    t = (item.get("text") or "").strip()
+                    if t:
+                        texts.append(t)
+                else:
+                    t = (getattr(item, "text", "") or "").strip()
+                    if t:
+                        texts.append(t)
+            merged = "\n".join(texts).strip()
+            return (merged or None), []
         return None, []
     except Exception as e:
-        print(f"STT verbose 转写失败，将回退普通转写: {e}")
-
-    # --- 2) 回退：普通转写 ---
-    bio2 = io.BytesIO(audio_data)
-    bio2.name = filename  # type: ignore[attr-defined]
-    try:
-        resp2 = client.audio.transcriptions.create(
-            model=stt_model,
-            file=(filename, bio2, mime),
-        )
-        text2 = getattr(resp2, "text", None)
-        if text2:
-            return text2.strip(), []
-        return None, []
-    except Exception as e:
-        print(f"STT 转写异常: {e}")
+        _log_exception("STT 转写异常", e)
         return None, []
 
 
@@ -188,9 +193,11 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
     cfg = get_speech_config()
     tts_model = (cfg.get("tts_model") or "").strip()
     tts_voice = (cfg.get("tts_voice") or "").strip() or "alloy"
+    tts_api_base = (cfg.get("tts_api_base") or "").strip()
     if not tts_model:
         return None
 
+    print("[tts] request model=%s base_url=%s voice=%s" % (tts_model, tts_api_base, tts_voice))
     try:
         resp = client.audio.speech.create(
             model=tts_model,
@@ -204,6 +211,7 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
                 f.write(audio_bytes)
         return audio_bytes
     except Exception as e:
+        _log_exception("TTS 合成首轮失败", e)
         # 部分兼容网关使用 response_format 参数名
         try:
             resp = client.audio.speech.create(
@@ -218,7 +226,7 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
                     f.write(audio_bytes)
             return audio_bytes
         except Exception as e2:
-            print(f"TTS 合成异常: {e}; fallback 失败: {e2}")
+            _log_exception("TTS fallback 失败", e2)
             return None
 
 
@@ -247,6 +255,7 @@ def transcribe_with_retry(
                 return text.strip(), ""
             last_err = "识别结果为空，请重新录音或检查麦克风/环境噪音。"
         except Exception as e:
-            last_err = f"识别异常: {e}"
+            _log_exception("STT 重试过程异常", e)
+            last_err = f"识别异常: {type(e).__name__}: {e}"
         print(f"STT 重试 {attempt + 1}/{max_retries}: {last_err}")
     return None, last_err or "语音识别失败"
