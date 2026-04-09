@@ -70,8 +70,8 @@
 在 `.env` 中配置（可复制 `.env.example`）：
 
 - `OPENAI_API_KEY`（必填）
-- `OPENAI_API_BASE`（可选，兼容网关）
-- `LLM_MODEL`（可选，默认见 `llm_service.py`）
+- `OPENAI_API_BASE`（可选，如 DeepSeek：`https://api.deepseek.com/v1`）
+- `LLM_MODEL`（可选，默认 `deepseek-chat`，见 `llm_service.py`）
 - `OPENAI_TIMEOUT`（可选，HTTP 超时秒数，默认 `120`，网络慢或网关易超时时可调大）
 - 语音可选：`STT_MODEL`、`TTS_MODEL`、`TTS_VOICE`
 

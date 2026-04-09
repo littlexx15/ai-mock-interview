@@ -7,8 +7,8 @@ AI 模拟面试器 - 语音服务模块
 import io
 from typing import Any, Dict, List, Optional, Tuple
 
-from config_env import getenv_smart
-from llm_service import get_client
+from config_env import getenv_smart, getenv_smart_optional
+from llm_service import get_speech_client
 
 
 def _guess_filename_and_mime(audio_format: str) -> Tuple[str, str]:
@@ -73,7 +73,7 @@ def speech_to_text_verbose(
 
     :return: (全文, segments)；segment 形如 {"text", "start", "end"}
     """
-    client = get_client()
+    client = get_speech_client()
     if not client:
         return None, []
 
@@ -148,7 +148,7 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
     :param output_path: 保存路径，可选（用于离线留存/调试）
     :return: 音频字节（失败返回 None）
     """
-    client = get_client()
+    client = get_speech_client()
     if not client:
         return None
 
@@ -173,8 +173,21 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
 
 
 def is_speech_available() -> bool:
-    """检查语音功能是否可用"""
-    return bool(get_client())
+    """
+    检查语音功能是否可用。
+
+    若仅将 OPENAI_API_BASE 指向 DeepSeek 而未单独配置 SPEECH_*，则语音不可用
+    （DeepSeek 不提供与聊天同域名的 Audio 接口）。
+    """
+    if not get_speech_client():
+        return False
+    speech_base = getenv_smart_optional("SPEECH_API_BASE")
+    llm_base = getenv_smart_optional("OPENAI_API_BASE") or ""
+    if speech_base:
+        return True
+    if "deepseek.com" in llm_base.lower():
+        return False
+    return True
 
 
 def transcribe_with_retry(

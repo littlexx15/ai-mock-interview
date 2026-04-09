@@ -117,7 +117,7 @@ def _default_eval() -> Dict:
         "oral_rewrites": [],
         "do_not_say": [],
         "risk_reminders": [],
-        "improvement_suggestions": ["请确认 OPENAI_API_KEY 已正确配置"],
+        "improvement_suggestions": ["请确认环境变量中的 API 密钥与网关（如 OPENAI_API_KEY、OPENAI_API_BASE）已正确配置"],
         "optimized_expressions": [],
         "next_practice": [],
     }

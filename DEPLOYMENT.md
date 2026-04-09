@@ -30,7 +30,7 @@
 |------|------|------|
 | `OPENAI_API_KEY` | 是 | LLM / 语音 API 密钥 |
 | `OPENAI_API_BASE` | 否 | 兼容 API 基地址（Azure/自建网关等） |
-| `LLM_MODEL` | 否 | 默认 `gpt-4o-mini` |
+| `LLM_MODEL` | 否 | 默认 `deepseek-chat`（可改为 `gpt-4o-mini` 等） |
 | `OPENAI_TIMEOUT` | 否 | 秒，默认 `120` |
 | `STT_MODEL` | 否 | 默认 `whisper-1` |
 | `TTS_MODEL` / `TTS_VOICE` | 否 | TTS 模型与音色 |
@@ -40,7 +40,7 @@
 ```toml
 OPENAI_API_KEY = "sk-..."
 # OPENAI_API_BASE = "https://..."
-# LLM_MODEL = "gpt-4o-mini"
+# LLM_MODEL = "deepseek-chat"
 ```
 
 **Render / Railway**：在 Environment 里逐条添加同名变量。

@@ -125,7 +125,9 @@ def _sidebar_voice_notice():
     st.sidebar.header("🎙️ 面试方式")
     st.sidebar.caption("全程语音作答：录音结束自动识别并进入追问或下一题。")
     if not is_speech_available():
-        st.sidebar.error("⚠️ 未配置 OPENAI_API_KEY 或语音接口不可用，无法使用语音面试。")
+        st.sidebar.error(
+            "⚠️ 语音不可用：请配置 OPENAI_API_KEY；若 LLM 使用 DeepSeek，请另设 SPEECH_API_BASE / SPEECH_API_KEY（见 .env.example）。"
+        )
 
 
 def _tts_play(text: str, cache_key: tuple):
@@ -438,7 +440,9 @@ def render_interview_section():
         st.info(q_text)
 
     if not is_speech_available():
-        st.error("无法进行语音面试：请配置 OPENAI_API_KEY（语音转写依赖同一密钥）。")
+        st.error(
+            "无法进行语音面试：请检查 OPENAI_API_KEY；若聊天走 DeepSeek，语音需单独配置 SPEECH_API_BASE（如 OpenAI 官方）与 SPEECH_API_KEY。"
+        )
         return
 
     if state.get("follow_up_asked"):
