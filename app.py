@@ -90,6 +90,9 @@ def init_session():
         st.session_state.tts_cache = {}
     if "interview_log" not in st.session_state:
         st.session_state.interview_log = None
+    if "analysis_cache" not in st.session_state:
+        # key -> {"match","questions","job_title","resume_summary","portfolio_summary","candidate_bg"}
+        st.session_state.analysis_cache = {}
 
 
 def _mode_label() -> str:
@@ -114,6 +117,17 @@ def _show_question_source_badge(q: dict) -> None:
 
 def _md5_hex(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
+
+
+def _analysis_cache_key(resume_raw: str, jd_text: str, portfolio_raw: str) -> str:
+    raw = "||".join(
+        [
+            (resume_raw or "")[:12000],
+            (jd_text or "")[:8000],
+            (portfolio_raw or "")[:12000],
+        ]
+    )
+    return hashlib.md5(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def _sync_interview_log():
@@ -370,21 +384,37 @@ def render_analysis_section():
             jd = st.session_state.jd_text
             p = st.session_state.portfolio_data
             p_raw = (p.get("raw_text") if p else "") or ""
-
-            match = analyze_match(resume["raw_text"], jd, p_raw or None)
-            st.session_state.match_analysis = match
-
-            job_title = (match.get("job_title_guess") or "").strip() or "目标岗位"
-            p_sum = (p.get("summary") if p else "") or ""
             r_sum = resume.get("summary", resume["raw_text"][:1500])
-            cand_bg = _build_candidate_background_snippet(r_sum, jd, p_sum, job_title)
+            p_sum = (p.get("summary") if p else "") or ""
+            ck = _analysis_cache_key(resume.get("raw_text", ""), jd, p_raw)
+            cached = st.session_state.analysis_cache.get(ck)
 
-            questions = generate_questions(
-                r_sum,
-                jd,
-                match,
-                portfolio_summary=p_sum,
-            )
+            if cached:
+                match = cached["match"]
+                questions = cached["questions"]
+                job_title = cached["job_title"]
+                cand_bg = cached["candidate_bg"]
+                st.session_state.match_analysis = match
+                st.caption("命中分析缓存：相同简历/JD/作品集输入已复用结果。")
+            else:
+                match = analyze_match(resume["raw_text"], jd, p_raw or None)
+                st.session_state.match_analysis = match
+                job_title = (match.get("job_title_guess") or "").strip() or "目标岗位"
+                cand_bg = _build_candidate_background_snippet(r_sum, jd, p_sum, job_title)
+                questions = generate_questions(
+                    r_sum,
+                    jd,
+                    match,
+                    portfolio_summary=p_sum,
+                )
+                st.session_state.analysis_cache[ck] = {
+                    "match": match,
+                    "questions": questions,
+                    "job_title": job_title,
+                    "resume_summary": r_sum,
+                    "portfolio_summary": p_sum,
+                    "candidate_bg": cand_bg,
+                }
 
             state = build_interview_state(
                 questions,

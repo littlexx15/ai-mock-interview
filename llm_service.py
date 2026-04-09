@@ -60,6 +60,7 @@ def chat_completion(
     messages: list,
     temperature: float = 0.7,
     max_tokens: int = 2000,
+    model: Optional[str] = None,
 ) -> Optional[str]:
     """
     调用 LLM 完成对话
@@ -71,8 +72,9 @@ def chat_completion(
         return None
 
     try:
+        use_model = (model or "").strip() or _model()
         resp = client.chat.completions.create(
-            model=_model(),
+            model=use_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,

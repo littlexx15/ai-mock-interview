@@ -4,6 +4,7 @@ AI 模拟面试器 - 面试引擎
 管理面试流程、提问、追问
 """
 
+import os
 from typing import Dict, List, Optional
 
 from llm_service import chat_completion
@@ -27,6 +28,15 @@ def _format_prior_records_light(records: Optional[List[Dict]], max_items: int = 
         if rec.get("follow_up"):
             lines.append(f"前序追问：{(rec.get('follow_up') or '')[:80]}…")
     return "\n".join(lines)
+
+
+def _follow_up_model() -> Optional[str]:
+    """
+    追问模型可单独配置（双模型策略）。
+    未配置 FOLLOW_UP_MODEL 时沿用主模型。
+    """
+    m = (os.getenv("FOLLOW_UP_MODEL") or "").strip()
+    return m or None
 
 
 def get_follow_up(
@@ -65,10 +75,10 @@ def get_follow_up(
         )
     )
     messages = [{"role": "user", "content": prompt}]
-    resp = chat_completion(messages, temperature=0.88, max_tokens=280)
+    resp = chat_completion(messages, temperature=0.82, max_tokens=220, model=_follow_up_model())
     if not resp:
         print("[follow_up] LLM 返回空（常见：超时），将重试一次")
-        resp = chat_completion(messages, temperature=0.88, max_tokens=280)
+        resp = chat_completion(messages, temperature=0.86, max_tokens=220, model=_follow_up_model())
     if not resp:
         # 不再返回 NEXT_QUESTION：否则用户看不到任何「追问」，页面上会像只答了主问题就跳题
         print("[follow_up] 仍失败，使用兜底追问句（与主问题题干不同）")
@@ -89,7 +99,7 @@ def get_follow_up(
                 + "\n\n【重要】你刚才的追问与上一轮完全相同，请换一个完全不同的切入角度，仍只输出一行追问或 NEXT_QUESTION。",
             }
         ]
-        resp2 = chat_completion(messages_retry, temperature=0.95, max_tokens=280)
+        resp2 = chat_completion(messages_retry, temperature=0.9, max_tokens=220, model=_follow_up_model())
         text = (resp2 or text).strip() or FOLLOW_UP_FALLBACK
     return text
 

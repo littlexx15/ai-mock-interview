@@ -4,6 +4,8 @@ AI 模拟面试器 - 评估模块
 深度复盘：维度评分、逐题复盘、口语化改写、风险提醒
 """
 
+import os
+
 from typing import Any, Dict, List
 
 from llm_service import chat_json
@@ -42,10 +44,11 @@ def evaluate_interview(
     print("[eval] start records=%s resume_chars=%s jd_chars=%s" % (nrec, len(resume_summary or ""), len(jd_text or "")))
 
     # 深度复盘 JSON 很大，默认 2000 token 易截断导致解析失败 → 页面“像没生成”
+    eval_max_tokens = int(os.getenv("EVAL_MAX_TOKENS", "10000") or "10000")
     result = chat_json(
         messages,
         default=None,
-        max_tokens=12000,
+        max_tokens=eval_max_tokens,
         temperature=0.35,
     )
 

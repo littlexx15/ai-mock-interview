@@ -21,13 +21,14 @@ def analyze_match(
     分析简历、可选作品集与 JD 的匹配度。
     portfolio_text 为空时自动降级为仅简历+JD。
     """
-    resume_text = truncate_text(resume_text or "", 6000)
-    jd_text = truncate_text(jd_text or "", 3000)
+    # 分析阶段保留充分信息，但避免超长上下文导致首轮变慢
+    resume_text = truncate_text(resume_text or "", 5000)
+    jd_text = truncate_text(jd_text or "", 2600)
     pt = (portfolio_text or "").strip()
     if not pt:
         pt = "（未提供作品集：本次分析仅基于简历与 JD。）"
     else:
-        pt = truncate_text(pt, 4000)
+        pt = truncate_text(pt, 3200)
 
     prompt = MATCH_ANALYSIS_WITH_PORTFOLIO_PROMPT.format(
         resume_text=resume_text,
@@ -78,7 +79,8 @@ def generate_questions(
         ps = "（未提供作品集）"
     else:
         ps = truncate_text(ps, 2000)
-    match_str = json.dumps(match_analysis, ensure_ascii=False, indent=2)
+    # 去掉缩进可显著减少 token，提升“生成题目”速度
+    match_str = json.dumps(match_analysis, ensure_ascii=False, separators=(",", ":"))
 
     prompt = QUESTION_GENERATION_WITH_PORTFOLIO_PROMPT.format(
         resume_summary=resume_summary,
