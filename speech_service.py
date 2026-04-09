@@ -7,8 +7,38 @@ AI 模拟面试器 - 语音服务模块
 import io
 from typing import Any, Dict, List, Optional, Tuple
 
-from config_env import getenv_smart, getenv_smart_optional
-from llm_service import get_speech_client
+from openai import OpenAI
+
+from config_env import get_speech_config, get_text_llm_config, is_speech_ready
+
+
+def _build_client(api_base: str) -> Optional[OpenAI]:
+    """按指定 base_url 构建语音客户端。"""
+    cfg = get_speech_config()
+    api_key = (cfg.get("api_key") or "").strip()
+    if not api_key:
+        return None
+    raw_timeout = (get_text_llm_config().get("timeout") or "").strip()
+    try:
+        timeout = float(raw_timeout or "180")
+    except Exception:
+        timeout = 180.0
+    kwargs = {"api_key": api_key, "timeout": timeout}
+    base = (api_base or "").strip()
+    if not base:
+        return None
+    kwargs["base_url"] = base.rstrip("/")
+    return OpenAI(**kwargs)
+
+
+def get_stt_client() -> Optional[OpenAI]:
+    cfg = get_speech_config()
+    return _build_client(cfg.get("stt_api_base") or "")
+
+
+def get_tts_client() -> Optional[OpenAI]:
+    cfg = get_speech_config()
+    return _build_client(cfg.get("tts_api_base") or "")
 
 
 def _guess_filename_and_mime(audio_format: str) -> Tuple[str, str]:
@@ -50,7 +80,7 @@ def speech_to_text(audio_data: bytes, audio_format: str = "wav") -> Optional[str
     """
     语音转文字（STT）
 
-    - 使用 OpenAI 兼容 API 的音频转写能力（默认 `whisper-1`）。
+    - 使用 OpenAI 兼容 API 的音频转写能力（模型由 STT_MODEL 提供）。
     - 说明：返回纯文本，供上层继续走原有“文本面试”逻辑。
 
     :param audio_data: 音频字节
@@ -73,11 +103,14 @@ def speech_to_text_verbose(
 
     :return: (全文, segments)；segment 形如 {"text", "start", "end"}
     """
-    client = get_speech_client()
+    client = get_stt_client()
     if not client:
         return None, []
 
-    stt_model = getenv_smart("STT_MODEL", "whisper-1")
+    cfg = get_speech_config()
+    stt_model = (cfg.get("stt_model") or "").strip()
+    if not stt_model:
+        return None, []
 
     filename, mime = _guess_filename_and_mime(audio_format)
     bio = io.BytesIO(audio_data)
@@ -148,46 +181,50 @@ def text_to_speech(text: str, output_path: Optional[str] = None) -> Optional[byt
     :param output_path: 保存路径，可选（用于离线留存/调试）
     :return: 音频字节（失败返回 None）
     """
-    client = get_speech_client()
+    client = get_tts_client()
     if not client:
         return None
 
-    tts_model = getenv_smart("TTS_MODEL", "tts-1")
-    voice = getenv_smart("TTS_VOICE", "alloy")
+    cfg = get_speech_config()
+    tts_model = (cfg.get("tts_model") or "").strip()
+    tts_voice = (cfg.get("tts_voice") or "").strip() or "alloy"
+    if not tts_model:
+        return None
 
     try:
         resp = client.audio.speech.create(
             model=tts_model,
-            voice=voice,
+            voice=tts_voice,
             input=text,
             format="mp3",
         )
-        audio_bytes = resp.read()
+        audio_bytes = resp.read() if hasattr(resp, "read") else bytes(resp)
         if output_path:
             with open(output_path, "wb") as f:
                 f.write(audio_bytes)
         return audio_bytes
     except Exception as e:
-        print(f"TTS 合成异常: {e}")
-        return None
+        # 部分兼容网关使用 response_format 参数名
+        try:
+            resp = client.audio.speech.create(
+                model=tts_model,
+                voice=tts_voice,
+                input=text,
+                response_format="mp3",
+            )
+            audio_bytes = resp.read() if hasattr(resp, "read") else bytes(resp)
+            if output_path:
+                with open(output_path, "wb") as f:
+                    f.write(audio_bytes)
+            return audio_bytes
+        except Exception as e2:
+            print(f"TTS 合成异常: {e}; fallback 失败: {e2}")
+            return None
 
 
 def is_speech_available() -> bool:
-    """
-    检查语音功能是否可用。
-
-    若仅将 OPENAI_API_BASE 指向 DeepSeek 而未单独配置 SPEECH_*，则语音不可用
-    （DeepSeek 不提供与聊天同域名的 Audio 接口）。
-    """
-    if not get_speech_client():
-        return False
-    speech_base = getenv_smart_optional("SPEECH_API_BASE")
-    llm_base = getenv_smart_optional("OPENAI_API_BASE") or ""
-    if speech_base:
-        return True
-    if "deepseek.com" in llm_base.lower():
-        return False
-    return True
+    """语音是否已完整配置并可初始化客户端。"""
+    return is_speech_ready() and bool(get_stt_client()) and bool(get_tts_client())
 
 
 def transcribe_with_retry(
@@ -199,6 +236,9 @@ def transcribe_with_retry(
     录音结束后自动 STT，带简单重试。
     返回 (识别文本, 错误说明)；成功时错误说明为空字符串。
     """
+    if not is_speech_ready():
+        return None, "语音未配置：请设置 SPEECH_API_KEY / STT_API_BASE / STT_MODEL / TTS_API_BASE / TTS_MODEL。"
+
     last_err = ""
     for attempt in range(max(1, max_retries)):
         try:

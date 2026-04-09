@@ -1,6 +1,6 @@
 # AI 模拟面试器
 
-本地可运行的 Web 应用：上传**简历**、可选**作品集**、粘贴 **JD**，进行匹配分析与**仅语音**模拟面试。**出题以 JD 为主轴**，简历/作品作为证据与缺口来源；输出**深度复盘**并支持**完整面试日志**导出（JSON / Markdown / TXT）。
+本地可运行的 Web 应用：上传**简历**、可选**作品集**、粘贴 **JD**，进行匹配分析与模拟面试。**出题以 JD 为主轴**，简历/作品作为证据与缺口来源；输出**深度复盘**并支持**完整面试日志**导出（JSON / Markdown / TXT）。支持：仅文本模式（默认可用）或语音模式（需额外配置）。
 
 ---
 
@@ -65,15 +65,31 @@
 
 ---
 
-## 三、环境变量
+## 三、环境变量（文本与语音分离）
 
 在 `.env` 中配置（可复制 `.env.example`）：
 
-- `OPENAI_API_KEY`（必填）
-- `OPENAI_API_BASE`（可选，如 DeepSeek：`https://api.deepseek.com/v1`）
-- `LLM_MODEL`（可选，默认 `deepseek-chat`，见 `llm_service.py`）
-- `OPENAI_TIMEOUT`（可选，HTTP 超时秒数，默认 `120`，网络慢或网关易超时时可调大）
-- 语音可选：`STT_MODEL`、`TTS_MODEL`、`TTS_VOICE`
+**A. 文本 LLM（必需，优先保证可用）**
+
+- `OPENAI_API_KEY`
+- `OPENAI_API_BASE`（可选，OpenAI 兼容网关地址）
+- `LLM_MODEL`
+- `OPENAI_TIMEOUT`（建议 `180`）
+
+**B. 语音 STT/TTS（可选，独立于文本）**
+
+- `SPEECH_API_KEY`
+- `STT_API_BASE`
+- `STT_MODEL`
+- `TTS_API_BASE`
+- `TTS_MODEL`
+- `TTS_VOICE`
+
+说明：
+
+- 文本与语音配置独立：只配文本时，应用自动以**文字模式**运行。
+- 文本调用保持 OpenAI 兼容接口结构，便于切换到不同平台。
+- 若后续切到阿里云百炼，模型名请以百炼控制台当前可用列表为准。
 
 ---
 
@@ -133,11 +149,11 @@ ai-mock-interview/
 **Q：没有作品集能否使用？**  
 A：可以。分析 Prompt 会自动降级为仅简历+JD。
 
-**Q：语音失败会崩页面吗？**  
-A：会提示错误并支持重试；请检查网络与 OPENAI_API_KEY，或稍后再试。
+**Q：没配语音还能用吗？**  
+A：可以。应用会提示“当前仅支持文字模式，语音功能未配置”，不影响文本面试流程。
 
-**Q：如何用国产大模型？**  
-A：设置 `OPENAI_API_BASE` 与对应 `OPENAI_API_KEY`、`LLM_MODEL`。若网关不支持部分音频接口，语音功能可能不可用。
+**Q：如何切到国产平台（如百炼）？**  
+A：文本侧填写 `OPENAI_API_BASE`、`OPENAI_API_KEY`、`LLM_MODEL` 即可；语音侧需单独配置 `SPEECH_*` 与 `STT_MODEL`/`TTS_MODEL`。具体模型名请以平台控制台最新可用模型为准。
 
 **Q：面试日志存在哪里？**  
 A：运行期间在 `st.session_state["interview_log"]`；结束后可通过页面按钮下载 JSON/Markdown/TXT。

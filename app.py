@@ -32,7 +32,7 @@ from speech_service import (
     text_to_speech,
     transcribe_with_retry,
 )
-from config_env import getenv_smart
+from config_env import get_runtime_diag, is_text_llm_ready
 from utils import score_dimension_label_zh, truncate_text
 
 
@@ -89,8 +89,8 @@ def init_session():
 
 
 def _mode_label() -> str:
-    """本应用仅支持语音模式（日志与展示用）。"""
-    return "语音"
+    """根据当前配置展示模式（日志与展示用）。"""
+    return "语音" if is_speech_available() else "文字"
 
 
 def _show_question_source_badge(q: dict) -> None:
@@ -123,11 +123,30 @@ def _sync_interview_log():
 
 def _sidebar_voice_notice():
     st.sidebar.header("🎙️ 面试方式")
-    st.sidebar.caption("全程语音作答：录音结束自动识别并进入追问或下一题。")
-    if not is_speech_available():
-        st.sidebar.error(
-            "⚠️ 语音不可用：请配置 OPENAI_API_KEY；若 LLM 使用 DeepSeek，请另设 SPEECH_API_BASE / SPEECH_API_KEY（见 .env.example）。"
-        )
+    st.sidebar.caption("语音已配置时可录音作答；未配置时自动切换为文字作答。")
+    if is_speech_available():
+        st.sidebar.success("✅ 当前支持语音模式。")
+    else:
+        miss = "SPEECH_API_KEY / STT_API_BASE / STT_MODEL / TTS_API_BASE / TTS_MODEL"
+        st.sidebar.info(f"ℹ️ 当前仅支持文字模式，语音功能未配置（缺少：{miss}）。")
+
+
+def _sidebar_runtime_diag():
+    """可选诊断输出（不展示密钥明文）。"""
+    with st.sidebar.expander("🛠️ 配置诊断（不含密钥）", expanded=False):
+        if not st.checkbox("显示当前运行配置", value=False, key="show_runtime_diag"):
+            st.caption("勾选后显示 key 是否存在、model/base_url/timeout。")
+            return
+        d = get_runtime_diag()
+        st.write("**text.key_exists**:", d.get("text_key_exists", "no"))
+        st.write("**text.base_url**:", d.get("text_base_url", ""))
+        st.write("**text.model**:", d.get("text_model", ""))
+        st.write("**text.timeout**:", d.get("text_timeout", ""))
+        st.write("**speech.key_exists**:", d.get("speech_key_exists", "no"))
+        st.write("**speech.stt_base_url**:", d.get("speech_stt_base_url", ""))
+        st.write("**speech.stt_model**:", d.get("stt_model", ""))
+        st.write("**speech.tts_base_url**:", d.get("speech_tts_base_url", ""))
+        st.write("**speech.tts_model**:", d.get("tts_model", ""))
 
 
 def _tts_play(text: str, cache_key: tuple):
@@ -258,6 +277,29 @@ def _render_voice_turn(
     st.session_state[proc_key] = digest
     _sync_interview_log()
     st.rerun()
+
+
+def _render_text_turn(*, state: dict, role: str, q_text: str, hint: str, is_follow: bool) -> None:
+    """文字模式单轮：输入回答并提交。"""
+    idx = int(state["current_index"])
+    key = f"text_answer_{idx}_{role}"
+    answer = st.text_area(
+        "请输入你的回答",
+        height=140,
+        key=key,
+        placeholder="输入你的回答后点击“提交回答”",
+    )
+    if st.button("提交回答", key=f"submit_{idx}_{role}"):
+        if not (answer or "").strip():
+            st.warning("请输入回答后再提交。")
+            return
+        with st.spinner("正在生成追问或判定进入下一题…"):
+            if not is_follow:
+                _apply_main_answer(state, q_text, hint, answer)
+            else:
+                _apply_follow_answer(state, q_text, answer)
+        _sync_interview_log()
+        st.rerun()
 
 
 def render_upload_section():
@@ -439,33 +481,50 @@ def render_interview_section():
         st.markdown(f"**第 {idx + 1}/{total} 题 · 主问题** · [{q_type}]")
         st.info(q_text)
 
-    if not is_speech_available():
-        st.error(
-            "无法进行语音面试：请检查 OPENAI_API_KEY；若聊天走 DeepSeek，语音需单独配置 SPEECH_API_BASE（如 OpenAI 官方）与 SPEECH_API_KEY。"
-        )
-        return
+    speech_on = is_speech_available()
+    if not speech_on:
+        st.info("当前仅支持文字模式，语音功能未配置。")
 
-    if state.get("follow_up_asked"):
-        _tts_play(state.get("current_follow_up", ""), (idx, "fu", state.get("current_follow_up", "")))
-    else:
-        _tts_play(q_text, (idx, "q", q_text))
+    if speech_on:
+        if state.get("follow_up_asked"):
+            _tts_play(state.get("current_follow_up", ""), (idx, "fu", state.get("current_follow_up", "")))
+        else:
+            _tts_play(q_text, (idx, "q", q_text))
 
     if not state.get("follow_up_asked"):
-        _render_voice_turn(
-            state=state,
-            role="main",
-            q_text=q_text,
-            hint=hint,
-            is_follow=False,
-        )
+        if speech_on:
+            _render_voice_turn(
+                state=state,
+                role="main",
+                q_text=q_text,
+                hint=hint,
+                is_follow=False,
+            )
+        else:
+            _render_text_turn(
+                state=state,
+                role="main",
+                q_text=q_text,
+                hint=hint,
+                is_follow=False,
+            )
     else:
-        _render_voice_turn(
-            state=state,
-            role="follow",
-            q_text=q_text,
-            hint=hint,
-            is_follow=True,
-        )
+        if speech_on:
+            _render_voice_turn(
+                state=state,
+                role="follow",
+                q_text=q_text,
+                hint=hint,
+                is_follow=True,
+            )
+        else:
+            _render_text_turn(
+                state=state,
+                role="follow",
+                q_text=q_text,
+                hint=hint,
+                is_follow=True,
+            )
 
 
 def render_evaluation_section():
@@ -559,12 +618,13 @@ def main():
     init_session()
 
     st.markdown('<p class="main-header">🎤 AI 模拟面试器</p>', unsafe_allow_html=True)
-    st.caption("简历 + 可选作品集 + JD → 匹配分析 → 语音模拟面试 → 深度复盘与日志导出。")
+    st.caption("简历 + 可选作品集 + JD → 匹配分析 → 模拟面试（语音/文字）→ 深度复盘与日志导出。")
 
     _sidebar_voice_notice()
+    _sidebar_runtime_diag()
 
-    if not getenv_smart("OPENAI_API_KEY"):
-        st.warning("⚠️ 请配置 OPENAI_API_KEY（本地用 `.env`，云端用平台 Secrets / 环境变量）")
+    if not is_text_llm_ready():
+        st.warning("⚠️ 文本模型配置不完整：至少需要 OPENAI_API_KEY 与 LLM_MODEL。")
 
     if not render_upload_section():
         st.stop()
